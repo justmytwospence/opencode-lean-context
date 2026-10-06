@@ -1,0 +1,33 @@
+{
+  "name": "opencode-lean-context",
+  "version": "0.1.0",
+  "description": "Keeps opencode's context lean: Jev trims large tool output to what the agent needs as it arrives.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    "./server": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "jev"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justmytwospence/opencode-lean-context"
+  },
+  "scripts": {
+    "check": "npm run typecheck && npm test",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.18.0",
+    "@types/node": "^22.20.4",
+    "typescript": "^5.9.0",
+    "vitest": "^5.0.2"
+  }
+}
