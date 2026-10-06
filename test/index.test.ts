@@ -1,8 +1,10 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { expect, test } from "vitest";
-import { DEFAULT_OPTIONS, type Options, createHooks, resolveOptions, savePath } from "../src/index.ts";
+import { DEFAULT_OPTIONS, NAME, type Options, createHooks, currentOptions, resolveOptions, savePath } from "../src/index.ts";
 
 process.env.XDG_DATA_HOME = mkdtempSync("/tmp/lean-");
+process.env.XDG_CONFIG_HOME = mkdtempSync("/tmp/lean-config-");
 
 const big = Array.from({ length: 2_000 }, (_, i) => (i === 1_000 ? "Error: expected 3 retries, got 1" : `ok ${i} ${"-".repeat(10)}`)).join("\n");
 
@@ -22,7 +24,7 @@ const history = [
   { info: { role: "assistant" }, parts: [{ type: "text", text: "Running the tests." }, { type: "tool", tool: "bash" }] },
 ];
 
-function setup(answer: Answer, opts: { key?: string; options?: Partial<Options> } = {}) {
+function setup(answer: Answer, opts: { key?: string; options?: Partial<Options> | (() => Options) } = {}) {
   process.env.TYPESAFE_API_KEY = opts.key ?? "k";
   const sent: any[] = [];
   const logs: string[] = [];
@@ -40,7 +42,8 @@ function setup(answer: Answer, opts: { key?: string; options?: Partial<Options> 
     app: { log: async ({ body }: { body: { message: string } }) => (logs.push(body.message), {}) },
     tui: { showToast: async ({ body }: { body: { message: string } }) => (toasts.push(body.message), {}) },
   };
-  const hooks = createHooks(client as never, { ...DEFAULT_OPTIONS, ...opts.options }, fetchImpl);
+  const options = typeof opts.options === "function" ? opts.options : { ...DEFAULT_OPTIONS, ...opts.options };
+  const hooks = createHooks(client as never, options, fetchImpl);
   return { hooks, sent, logs, toasts };
 }
 
@@ -118,6 +121,24 @@ test("options merge over the defaults", () => {
   expect(o.trim.readMinChars).toBe(50_000);
   expect(o.jev).toEqual({ model: "jev-latest", timeoutMs: 5_000 });
   expect(resolveOptions(undefined)).toEqual(DEFAULT_OPTIONS);
+});
+
+test("the shared settings files are read on each tool call, so edits apply without a restart", async () => {
+  const project = "/tmp/lean-project-none";
+  const file = path.join(process.env.XDG_CONFIG_HOME as string, "agents", `${NAME}.json`);
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({ enabled: false }));
+  utimesSync(file, 1_000, 1_000);
+  const s = setup(keepErrors, { options: () => currentOptions({ toast: false }, project) });
+  const hooks = await s.hooks;
+  expect(await run(hooks)).toBe(big);
+  expect(s.sent).toEqual([]);
+
+  writeFileSync(file, JSON.stringify({ enabled: true }));
+  utimesSync(file, 2_000, 2_000);
+  expect(await run(hooks, big, { callID: "call_live" })).not.toBe(big);
+  expect(s.sent).toHaveLength(1);
+  expect(s.toasts).toEqual([]);
 });
 
 test("savePath keeps ids safe for the file system", () => {

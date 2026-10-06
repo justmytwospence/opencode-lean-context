@@ -46,20 +46,39 @@ In `opencode.jsonc`, pinned to a commit:
 
 ```jsonc
 "plugin": [
-  ["opencode-lean-context@github:justmytwospence/opencode-lean-context#<commit>", {
-    // all optional; defaults shown
-    "enabled": true,
-    "toast": true,
-    "jev": { "model": "jev-latest", "timeoutMs": 2500 },
-    "trim": {
-      "minChars": 12000, "readMinChars": 50000, "maxBlocks": 150, "stateBudgetChars": 60000,
-      "keepThreshold": 0.4, "needsAllThreshold": 0.6, "maxKeptShare": 0.7, "headLines": 5, "tailLines": 20
-    }
-  }]
+  "opencode-lean-context@github:justmytwospence/opencode-lean-context#<commit>"
 ]
 ```
 
 Needs `TYPESAFE_API_KEY` in opencode's environment. Tested with opencode 1.18.29.
+
+## Settings
+
+Settings live in a shared, harness-neutral place that the pi and Claude Code ports of this plugin
+read as well, so one file configures lean-context everywhere: `~/.config/agents/lean-context.json`
+(under `$XDG_CONFIG_HOME` when set) for you, and `<project>/.agents/lean-context.json` for a
+project. Keys a harness does not know are ignored, so pi-only keys such as `compact` in the same
+file are fine. All keys are optional; the defaults:
+
+```jsonc
+{
+  "enabled": true,
+  "toast": true,
+  "jev": { "model": "jev-latest", "timeoutMs": 2500 },
+  "trim": {
+    "minChars": 12000, "readMinChars": 50000, "maxBlocks": 150, "stateBudgetChars": 60000,
+    "keepThreshold": 0.4, "needsAllThreshold": 0.6, "maxKeptShare": 0.7, "headLines": 5, "tailLines": 20
+  }
+}
+```
+
+opencode-only overrides go in the plugin's options in `opencode.jsonc` (the second element of the
+plugin tuple, `["opencode-lean-context@...", { "toast": false }]`) or in
+`<project>/.opencode/lean-context.json`. The layers merge in this order, later winning, objects
+deep-merged and arrays and scalars replaced: built-in defaults, `~/.config/agents/lean-context.json`,
+the `opencode.jsonc` options, `<project>/.agents/lean-context.json`,
+`<project>/.opencode/lean-context.json`. The files are re-read when they change, so edits apply to
+the next tool call without a restart; a missing or invalid file is ignored.
 
 ## Development
 

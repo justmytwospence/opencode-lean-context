@@ -2,13 +2,20 @@
 // it arrives (`tool.execute.after`), before it enters the context, so the prompt cache is
 // unaffected: Jev picks the blocks the agent needs for its current step; the rest is replaced by
 // `[… N lines omitted …]` markers and the full output is saved to a file the agent can read.
+// Settings come from the shared `~/.config/agents/lean-context.json` and
+// `.agents/lean-context.json`, the plugin options, and `.opencode/lean-context.json`, read on each
+// tool call (see settings.ts).
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
 import { askJev, noul } from "./jev.ts";
+import { deepMerge, loadSettings } from "./settings.ts";
 import { type MessageLike, clip, clipTail, recentTexts } from "./transcript.ts";
 import { DEFAULT_TRIM, type TrimSettings, assemble, makeBlocks, prefilter, trimFloor, trimQuestions } from "./trim.ts";
+
+/** The plugin's name: its settings files are `<dir>/lean-context.json`. */
+export const NAME = "lean-context";
 
 export interface Options {
   enabled: boolean;
@@ -27,14 +34,17 @@ export const DEFAULT_OPTIONS: Options = {
 
 type Client = PluginInput["client"];
 
+/** The plugin options from opencode.jsonc over the defaults: that layer alone, without the shared files. */
 export function resolveOptions(raw: Record<string, unknown> | undefined): Options {
-  const o = (raw ?? {}) as Partial<Options>;
-  return {
-    ...DEFAULT_OPTIONS,
-    ...o,
-    jev: { ...DEFAULT_OPTIONS.jev, ...(o.jev ?? {}) },
-    trim: { ...DEFAULT_OPTIONS.trim, ...(o.trim ?? {}) },
-  };
+  return deepMerge(DEFAULT_OPTIONS, raw);
+}
+
+/**
+ * The options in force now: defaults, `~/.config/agents/lean-context.json`, the plugin options,
+ * `<directory>/.agents/lean-context.json`, then `<directory>/.opencode/lean-context.json`.
+ */
+export function currentOptions(raw: Record<string, unknown> | undefined, directory: string): Options {
+  return loadSettings(NAME, DEFAULT_OPTIONS, raw, directory);
 }
 
 /** Where full output is saved: `$XDG_DATA_HOME/opencode/lean-context`, by default `~/.local/share/opencode/lean-context`. */
@@ -73,7 +83,12 @@ export function untruncated(text: string, dir = opencodeOutputDir()): string | u
   }
 }
 
-export async function createHooks(client: Client, options: Options, fetchImpl?: typeof fetch): Promise<Hooks> {
+/**
+ * `options` is read on every tool call when it is a function (the server passes one that merges
+ * the settings files), so edits apply without a restart.
+ */
+export async function createHooks(client: Client, options: Options | (() => Options), fetchImpl?: typeof fetch): Promise<Hooks> {
+  const optionsNow = typeof options === "function" ? options : () => options;
   /** Per session, the tool calls trimmed this turn: the agent asking again gets everything. */
   const trimmed = new Map<string, Set<string>>();
   const log = (message: string) =>
@@ -87,6 +102,7 @@ export async function createHooks(client: Client, options: Options, fetchImpl?: 
       if (event.type === "session.deleted") trimmed.delete((event.properties as { info: { id: string } }).info.id);
     },
     "tool.execute.after": async (input, output) => {
+      const options = optionsNow();
       if (!options.enabled) return;
       const floor = trimFloor(input.tool, options.trim);
       if (floor === undefined) return;
@@ -161,6 +177,6 @@ export async function createHooks(client: Client, options: Options, fetchImpl?: 
   };
 }
 
-const server: Plugin = async (input, options) => createHooks(input.client, resolveOptions(options));
+const server: Plugin = async (input, options) => createHooks(input.client, () => currentOptions(options, input.directory));
 
-export default { id: "lean-context", server };
+export default { id: NAME, server };
