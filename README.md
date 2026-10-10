@@ -1,5 +1,9 @@
 # opencode-lean-context
 
+> **Retired.** Folded into [opencode-cache-guard](https://github.com/justmytwospence/opencode-cache-guard),
+> which trims tool output with Jev the same way and adds a one-second Jev summary path for a cold
+> cache. Settings moved from `lean-context.json` to the `jev` and `trim` keys of `cache-guard.json`.
+
 An [opencode](https://opencode.ai) plugin that keeps the context lean: large tool output is
 trimmed to what the agent needs before it enters the context. [Jev](https://docs.typesafe.ai),
 TypeSafe's fast judgment model, decides which lines matter in a few hundred milliseconds. The port
